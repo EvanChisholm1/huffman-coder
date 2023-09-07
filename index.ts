@@ -1,4 +1,4 @@
-class BinaryNode {
+export class BinaryNode {
     left?: BinaryNode;
     right?: BinaryNode;
     value: number | string;
@@ -38,14 +38,13 @@ function setValues(node: BinaryNode) {
     }
 }
 
-function constructTree(nodes: Array<BinaryNode>): BinaryNode {
+export function constructTree(nodes: Array<BinaryNode>): BinaryNode {
     if (nodes.length === 1) {
         setValues(nodes[0]);
         return nodes[0];
     }
 
-    const sorted = nodes.sort((a, b) => a.probability - b.probability);
-    console.log(sorted.map((x) => x.probability));
+    nodes.sort((a, b) => a.probability - b.probability);
 
     const newNodes: Array<BinaryNode> = [];
     for (let i = 0; i < nodes.length; i += 2) {
@@ -67,7 +66,7 @@ function constructTree(nodes: Array<BinaryNode>): BinaryNode {
     return constructTree(newNodes);
 }
 
-function getKeys(
+export function getKeys(
     node: BinaryNode,
     path: string = "",
     keys: { [key: number | string]: string } = {}
@@ -87,10 +86,10 @@ const keys = getKeys(tree);
 const decodeKeys: { [key: string]: string } = {};
 Object.entries(keys).forEach(([k, v]) => (decodeKeys[v] = k));
 
-function encode(inputStr: string, keys: { [key: string]: string }) {
-    const encodedStr = `${inputStr}.`
-        .split("")
-        .reduce((prev, x) => `${prev}${keys[x]}`, "");
+export function encode(inputStr: string, keys: { [key: string]: string }) {
+    const encodedStr =
+        `${inputStr}`.split("").reduce((prev, x) => `${prev}${keys[x]}`, "") +
+        keys["end"];
 
     const chars = encodedStr.split("");
     const chunks: number[] = [];
@@ -113,7 +112,7 @@ function encode(inputStr: string, keys: { [key: string]: string }) {
     return bytes;
 }
 
-function decode(
+export function decode(
     bytes: ArrayBuffer,
     decodeKeys: { [key: string]: string }
 ): string {
@@ -135,7 +134,7 @@ function decode(
             const key = bits.splice(0, index).join("");
             index = 0;
             const c = decodeKeys[key];
-            if (c === ".") break;
+            if (c === "end") break;
 
             decodedText += c;
         }
@@ -146,5 +145,9 @@ function decode(
     return decodedText;
 }
 
-const encodedText = encode("1002384", keys);
-console.log(decode(encodedText, decodeKeys));
+// const encodedText = encode("1002384", keys);
+// console.log(decode(encodedText, decodeKeys));
+
+// const input = await Bun.file("./digits.txt").text();
+// const encoded = encode(input, keys);
+// Bun.write("out.bin", encoded);

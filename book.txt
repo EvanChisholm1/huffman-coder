@@ -1,0 +1,707 @@
+Data Compression Explained
+Matt Mahoney
+
+Copyright (C) 2010-2012, Dell, Inc. You are permitted to copy and distribute material from this book provided (1) any material you distribute includes this license, (2) the material is not modified, and (3) you do not charge a fee or require any other considerations for copies or for any works that incorporate material from this book. These restrictions do not apply to normal "fair use", defined as cited quotations totaling less than one page. This book may be downloaded without charge from http://mattmahoney.net/dc/dce.html.
+
+Last update: Apr. 15, 2013.
+
+e-reader translations by Alejo Sanchez, Oct. 29, 2011: mobi (Kindle) and epub (other readers).
+
+About this Book
+This book is for the reader who wants to understand how data compression works, or who wants to write data compression software. Prior programming ability and some math skills will be needed. Specific topics include:
+
+1. Information theory
+No universal compression
+Coding is bounded
+Modeling is not computable
+Compression is an artificial intelligence problem
+2. Benchmarks
+Calgary corpus results
+3. Coding
+Huffman
+arithmetic
+asymmetric binary
+numeric codes (unary, Rice, Golomb, extra bit)
+archive formats (error detection, encryption)
+4. Modeling
+Fixed order: bytewise bitwise, indirect
+Variable order: DMC, PPM, CTW
+Context mixing: linear mixing, logistic mixing, SSE, indirect SSE, match, PAQ, ZPAQ, Crinkler
+5. Transforms
+RLE
+LZ77 (LZSS, deflate, LZMA, LZX, ROLZ, LZP, snappy, deduplication)
+LZW and dictionary encoding
+Symbol ranking
+BWT (context sorting, inverse, bzip2, BBB, MSufSort v2 and v3, Itoh-Tanaka, DivSufSort, Bijective)
+Predictive filtering (delta coding, color transform, linear filtering)
+Specialized transforms (E8E9, precomp)
+Huffman pre-coding
+6. Lossy compression
+Images (BMP, GIF, PNG, TIFF, JPEG)
+JPEG recompression (Stuffit, PAQ, WinZIP PackJPG)
+Video (NTSC, MPEG)
+Audio (CD, MP3, AAC, Dolby, Vorbis)
+Conclusion
+Acknowledgements
+References
+This book is intended to be self contained. Sources are linked when appropriate, but you don't need to click on them to understand the material.
+
+1. Information Theory
+Data compression is the art of reducing the number of bits needed to store or transmit data. Compression can be either lossless or lossy. Losslessly compressed data can be decompressed to exactly its original value. An example is 1848 Morse Code. Each letter of the alphabet is coded as a sequence of dots and dashes. The most common letters in English like E and T receive the shortest codes. The least common like J, Q, X, and Z are assigned the longest codes.
+
+All data compression algorithms consist of at least a model and a coder (with optional preprocessing transforms). A model estimates the probability distribution (E is more common than Z). The coder assigns shorter codes to the more likely symbols. There are efficient and optimal solutions to the coding problem. However, optimal modeling has been proven not computable. Modeling (or equivalently, prediction) is both an artificial intelligence (AI) problem and an art.
+
+Lossy compression discards "unimportant" data, for example, details of an image or audio clip that are not perceptible to the eye or ear. An example is the 1953 NTSC standard for broadcast color TV, used until 2009. The human eye is less sensitive to fine detail between colors of equal brightness (like red and green) than it is to brightness (black and white). Thus, the color signal is transmitted with less resolution over a narrower frequency band than the monochrome signal.
+
+Lossy compression consists of a transform to separate important from unimportant data, followed by lossless compression of the important part and discarding the rest. The transform is an AI problem because it requires understanding what the human brain can and cannot perceive.
+
+Information theory places hard limits on what can and cannot be compressed losslessly, and by how much:
+
+There is no such thing as a "universal" compression algorithm that is guaranteed to compress any input, or even any input above a certain size. In particular, it is not possible to compress random data or compress recursively.
+Given a model (probability distribution) of your input data, the best you can do is code symbols with probability p using log2 1/p bits. Efficient and optimal codes are known.
+Data has a universal but uncomputable probability distribution. Specifically, any string x has probability (about) 2-|M| where M is the shortest possible description of x, and |M| is the length of M in bits, almost independent of the language in which M is written. However there is no general procedure for finding M or even estimating |M| in any language. There is no algorithm that tests for randomness or tells you whether a string can be compressed any further.
+1.1. No Universal Compression
+This is proved by the counting argument. Suppose there were a compression algorithm that could compress all strings of at least a certain size, say, n bits. There are exactly 2n different binary strings of length n. A universal compressor would have to encode each input differently. Otherwise, if two inputs compressed to the same output, then the decompresser would not be able to decompress that output correctly. However there are only 2n - 1 binary strings shorter than n bits.
+
+In fact, the vast majority of strings cannot be compressed by very much. The fraction of strings that can be compressed from n bits to m bits is at most 2m - n. For example, less than 0.4% of strings can be compressed by one byte.
+
+Every compressor that can compress any input must also expand some of its input. However, the expansion never needs to be more than one symbol. Any compression algorithm can be modified by adding one bit to indicate that the rest of the data is stored uncompressed.
+
+The counting argument applies to systems that would recursively compress their own output. In general, compressed data appears random to the algorithm that compressed it so that it cannot be compressed again.
+
+1.2. Coding is Bounded
+Suppose we wish to compress the digits of π, e.g. "314159265358979323846264...". Assume our model is that each digit occurs with probability 0.1, independent of any other digits. Consider 3 possible binary codes:
+
+  Digit BCD   Huffman Binary
+  ----  ----   ----   ----
+    0   0000   000    0
+    1   0001   001    1
+    2   0010   010    10
+    3   0011   011    11
+    4   0100   100    100
+    5   0101   101    101
+    6   0110   1100   110
+    7   0111   1101   111
+    8   1000   1110   1000
+    9   1001   1111   1001
+  ---   ----   ----   ----
+  bpc   4.0    3.4    not valid
+Using a BCD (binary coded decimal) code, π would be encoded as 0011 0001 0100 0001 0101... (Spaces are shown for readability only). The compression ratio is 4 bits per character (4 bpc). If the input was ASCII text, the output would be compressed 50%. The decompresser would decode the data by dividing it into 4 bit strings.
+
+The Huffman code would code π as 011 001 100 001 101 1111... The decoder would read bits one at a time and decode a digit as soon as it found a match in the table (after either 3 or 4 bits). The code is uniquely decodable because no code is a prefix of any other code. The compression ratio is 3.4 bpc.
+
+The binary code is not uniquely decodable. For example, 111 could be decoded as 7 or 31 or 13 or 111.
+
+There are better codes than the Huffman code given above. For example, we could assign Huffman codes to pairs of digits. There are 100 pairs each with probability 0.01. We could assign 6 bit codes (000000 through 011011) to 00 through 27, and 7 bits (0111000 through 1111111) to 28 through 99. The average code length is 6.72 bits per pair of digits, or 3.36 bpc. Similarly, coding groups of 3 digits using 9 or 10 bits would yield 3.3253 bpc.
+
+Shannon and Weaver (1949) proved that the best you can do for a symbol with probability p is assign a code of length log2 1/p. In this example, log2 1/0.1 = 3.3219 bpc.
+
+Shannon defined the expected information content or equivocation (now called entropy) of a random variable X as its expected code length. Suppose X may have values X1, X2,... and that each Xi has probability p(i). Then the entropy of X is H(X) = E[log2 1/p(X)] = Σi p(i) log2 1/p(i). For example, the entropy of the digits of π, according to our model, is 10 (0.1 log2 1/0.1) = 3.3219 bpc. There is no smaller code for this model that could be decoded unambiguously.
+
+The information content of a set of strings is at most the sum of the information content of the individual strings. If X and Y are strings, then H(X,Y) ≤ H(X) + H(Y). If they are equal, then X and Y are independent. Knowing one string would tell you nothing about the other.
+
+The conditional entropy H(X|Y) = H(X,Y) - H(Y) is the information content of X given Y. If X and Y are independent, then H(X|Y) = H(X).
+
+If X is a string of symbols x1x2...xn, then by the chain rule, p(X) may be expressed as a product of the sequence of symbol predictions conditioned on previous symbols: p(X) = Πi p(xi|x1..i-1). Likewise, the information content H(X) of random string X is the sum of the conditional entropies of each symbol given the previous symbols: H(X) = Σi H(xi|x1..i-1).
+
+Entropy is both a measure of uncertainty and a lower bound on expected compression. The entropy of an information source is the expected limit to which you can compress it. There are efficient coding methods, such as arithmetic codes, which are for all practical purposes optimal in this sense. It should be emphasized, however, that entropy can only be calculated for a known probability distribution. But in general, the model is not known.
+
+1.3. Modeling is Not Computable
+We modeled the digits of π as uniformly distributed and independent. Given that model, Shannon's coding theorem places a hard limit on the best compression that could be achieved. However, it is possible to use a better model. The digits of π are not really random. The digits are only unknown until you compute them. An intelligent compressor might recognize the digits of π and encode it as a description meaning "the first million digits of pi", or as a program that reconstructs the data when run. With our previous model, the best we could do is (106 log2 10)/8 ≈ 415,241 bytes. Yet, there are very small programs that can output π, some as small as 52 bytes.
+
+The counting argument says that most strings are not compressible. So it is a rather remarkable fact that most strings that we care about, for example English text, images, software, sensor readings, and DNA, are in fact compressible. These strings generally have short descriptions, whether they are described in English or as a program in C or x86 machine code.
+
+Solomonoff (1960, 1964), Kolmogorov (1965), and Chaitin (1966) independently proposed a universal a-priori probability distribution over strings based on their minimum description length. The algorithmic probability of a string x is defined as the fraction of random programs in some language L that output x, where each program M is weighted by 2-|M| and |M| is the length of M in bits. This probability is dominated by the shortest such program. We call this length the Kolmogorov complexity KL(x) of x.
+
+Algorithmic probability and complexity of a string x depend on the choice of language L, but only by a constant that is independent of x. Suppose that M1 and M2 are encodings of x in languages L1 and L2 respectively. For example, if L1 is C++, then M1 would be a program in C++ that outputs x. If L2 is English, the M2 would be a description of x with just enough detail that it would allow you to write x exactly. Now it is possible for any pair of languages to write in one language a compiler or interpreter or rules for understanding the other language. For example, you could write a description of the C++ language in English so that you could (in theory) read any C++ program and predict its output by "running" it in your head. Conversely, you could (in theory) write a program in C++ that input an English language description and translated it into C++. The size of the language description or compiler does not depend on x in any way. Then for any description M1 in any language L1 of any x, it is possible to find a description M2 in any other language L2 of x by appending to M1 a fixed length description of L1 written in L2.
+
+It is not proven that algorithmic probability is a true universal prior probability. Nevertheless it is widely accepted on empirical grounds because of its success in sequence prediction and machine learning over a wide range of data types. In machine learning, the minimum description length principle of choosing the simplest hypothesis consistent with the training data applies to a wide range of algorithms. It formalizes Occam's Razor. Occam noted in the 14'th century, that (paraphrasing) "the simplest answer is usually the correct answer". Occam's Razor is universally applied in all of the sciences because we know from experience that the simplest or most elegant (i.e. shortest) theory that explains the data tends to be the best predictor of future experiments.
+
+To summarize, the best compression we can achieve for any string x is to encode it as the shortest program M in some language L that outputs x. Furthermore, the choice of L becomes less important as the strings get longer. All that remains is to find a procedure that finds M for any x in some language L. However, Kolmogorov proved that there is no such procedure in any language. In fact, there is no procedure that just gives you |M|, the length of the shortest possible description of x, for all x. Suppose there were. Then it would be possible to describe "the first string that cannot be described in less than a million bits" leading to the paradox that we had just done so. (By "first", assume an ordering over strings from shortest to longest, breaking ties lexicographically).
+
+Nor is there a general test for randomness. Li and Vitanyi (2007) give a simple proof of a stronger variation of Gödel's first incompleteness theorem, namely that in any consistent, formal system (a set of axioms and rules of inference) powerful enough to describe statements in arithmetic, that there is at least one true statement that cannot be proven. Li and Vitanyi prove that if the system is sound (you can't prove any false statements) then there are an infinite number of true but unprovable statements. In particular, there are only a finite number of statements of the form "x is random" (K(x) ≥ |x|) that can be proven, out of an infinite number of possible finite strings x. Suppose otherwise. Then it would be possible to to enumerate all proofs (lists of axioms and applications of the rules of inference) and describe "the string x such that it is the first to be proven to be a million bits long and random" in spite of the fact that we just gave a short description of it. If F describes any formal system, then the longest string that can be proven to be random is never much longer than F, even though there are an infinite number of longer strings and most of them are random.
+
+Nor is there a general test to determine whether the compression of a string can be improved any further, because that would be equivalent to testing whether the compressed string is random.
+
+Because determining the length of the shortest descriptions of strings is not computable, neither is optimal compression. It is not hard to find difficult cases. For example, consider the short description "a string of a million zero bytes compressed with AES in CBC mode with key 'foo'". To any program that does not know the key, the data looks completely random and incompressible.
+
+1.4. Compression is an Artificial Intelligence Problem
+Prediction is intuitively related to understanding. If you understand a sequence, then you can predict it. If you understand a language, then you could predict what word might appear next in a paragraph in that language. If you understand an image, then you could predict what might lie under portions of the image that are covered up. Alternatively, random data has no meaning and is not predictable. This intuition suggests that prediction or compression could be used to test or measure understanding. We now formalize this idea.
+
+Optimal compression, if it were computable, would optimally solve the artificial intelligence (AI) problem under two vastly different definitions of "intelligence": the Turing test (Turing, 1950), and universal intelligence (Legg and Hutter, 2006).
+
+Turing first proposed a test for AI to sidestep the philosophically difficult question (which he considered irrelevant) of whether machines could think. This test, now known as the Turing test, is now widely accepted. The test is a game played by two humans who have not previously met and the machine under test. One human (the judge) communicates with the other human (the confederate) and with the machine through a terminal. Both the confederate and the machine try to convince the judge that each is human. If the judge cannot guess correctly which is the machine 70% of the time after 10 minutes of interaction, then the machine is said to have AI. Turing gave the following example of a possible dialogue:
+
+Q: Please write me a sonnet on the subject of the Forth Bridge.
+A: Count me out on this one. I never could write poetry.
+Q: Add 34957 to 70764.
+A: (Pause about 30 seconds and then give as answer) 105621.
+Q: Do you play chess?
+A: Yes.
+Q: I have K at my K1, and no other pieces. You have only K at K6 and R at R1. It is your move. What do you play?
+A: (After a pause of 15 seconds) R-R8 mate.
+It should be evident that compressing transcripts like this requires the ability to compute a model of the form p(A|Q) = p(QA)/P(Q) where Q is the context up to the current question, and A is the response. But if a model could make such predictions accurately, then it could also generate responses indistinguishable from that of a human.
+
+Predicting transcripts is similar to the problem to predicting ordinary written language. It requires in either case vast, real-world knowledge. Shannon (1950) estimated that the information content of written case-insensitive English without punctuation is 0.6 to 1.3 bits per character, based on experiments in which human subjects guessed successive characters in text with the help of letter n-gram frequency tables and dictionaries. The uncertainty is due not so much to variation in subject matter and human skill as it is due to the fact that different probability assignments lead to the same observed guessing sequences. Nevertheless, the best text compressors are only now compressing near the upper end of this range.
+
+Legg and Hutter proposed the second definition, universal intelligence, to be far more general than Turing's human intelligence. They consider the problem of reward-seeking agents in completely arbitrary environments described by random programs. In this model, an agent communicates with an environment by sending and receiving symbols. The environment also sends a reinforcement or reward signal to the agent. The goal of the agent is to maximize accumulated reward. Universal intelligence is defined as the expected reward over all possible environments, where the probability of each environment described by a program M is algorithmic, proportional to 2-|M|. Hutter (2004, 2007) proved that the optimal (but not computable) strategy for the agent is to guess after each input that the distribution over M is dominated by the shortest program consistent with past observation.
+
+Hutter calls this strategy AIXI. It is, of course, is just our uncomputable compression problem applied to a transcript of past interaction. AIXI may also be considered a formal statement and proof of Occam's Razor. The best predictor of the future is the simplest or shortest theory that explains the past.
+
+1.5. Summary
+There is no such thing as universal compression, recursive compression, or compression of random data.
+
+Most strings are random. Most meaningful strings are not.
+
+Compression = modeling + coding. Coding is a solved problem. Modeling is provably not solvable.
+
+Compression is both an art and an artificial intelligence problem. The key to compression is to understand the data you want to compress.
+
+2. Benchmarks
+A data compression benchmark measures compression ratio over a data set, and sometimes memory usage and speed on a particular computer. Some benchmarks evaluate size only, in order to avoid hardware dependencies. Compression ratio is often measured by the size of the compressed output file, or in bits per character (bpc) meaning compressed bits per uncompressed byte. In either case, smaller numbers are better. 8 bpc means no compression. 6 bpc means 25% compression or 75% of original size.
+
+Generally there is a 3 way trade off between size, speed, and memory usage. The top ranked compressors by size require a lot of computing resources.
+
+2.1. Calgary Corpus
+The Calgary corpus is the oldest compression benchmark still in use. It was created in 1987 and described in a survey of text compression models in 1989 (Bell, Witten and Cleary, 1989). It consists of 14 files with a total size of 3,141,622 bytes as follows:
+
+    111,261 BIB    - ASCII text in UNIX "refer" format - 725 bibliographic references.
+    768,771 BOOK1  - unformatted ASCII text - Thomas Hardy: Far from the Madding Crowd.
+    610,856 BOOK2  - ASCII text in UNIX "troff" format - Witten: Principles of Computer Speech.
+    102,400 GEO    - 32 bit numbers in IBM floating point format - seismic data.
+    377,109 NEWS   - ASCII text - USENET batch file on a variety of topics.
+     21,504 OBJ1   - VAX executable program - compilation of PROGP.
+    246,814 OBJ2   - Macintosh executable program - "Knowledge Support System".
+     53,161 PAPER1 - UNIX "troff" format - Witten, Neal, Cleary: Arithmetic Coding for Data Compression.
+     82,199 PAPER2 - UNIX "troff" format - Witten: Computer (in)security.
+    513,216 PIC    - 1728 x 2376 bitmap image (MSB first): text in French and line diagrams.
+     39,611 PROGC  - Source code in C - UNIX compress v4.0.
+     71,646 PROGL  - Source code in Lisp - system software.
+     49,379 PROGP  - Source code in Pascal - program to evaluate PPM compression.
+     93,695 TRANS  - ASCII and control characters - transcript of a terminal session.
+The struture of the corpus is shown in the diagram below. Each pixel represents a match between consecutive occurrences of a string. The color of the pixel represents the length of the match: black for 1 byte, red for 2, green for 4 and blue for 8. The horizontal axis represents the position of the second occurrence of the string. The vertical axis represents the distance back to the match on a logarithmic scale. (The image was generated by the fv program with labels added by hand).
+
+calgary
+
+String match structure of the Calgary corpus
+
+The horizontal dark line at around 60-70 in BOOK1 is the result of linefeed characters repeating at this regular interval. Dark lines at 1280 and 5576 in GEO are due to repeated data in block headers. The dark bands at multiples of 4 are due to the 4 byte structure of the data. PIC has a dark band at 1 due to long runs of zero bytes, and lines at multiples of 216, which is the width of the image in bytes. The blue curves at the top of the image show matches between different text files, namely BIB, BOOK1, BOOK2, NEWS, PAPER1, PAPER2, PROGC, PROGL, PROGP and TRANS, all of which contain English text. Thus, compressing these files together can result in better compression because they contain mutual information. No such matches are seen between GEO, OBJ2, and PIC with other files. Thus, these files should be compressed separately.
+
+Other structure can be seen. For example, there are dark bands in OBJ2 at 4, 6, 8, and higher even numbers due to the lengths of 68000 machine instructions. The dark band in BIB at around 150-200 represents the average length of a bibliographic entry. This knowledge is useful in designing compression algorithms.
+
+2.1.1. BOOK1
+A sample of text from BOOK1:
+
+  was receiving a percentage from the farmer till such
+  time as the advance should be cleared off Oak found+
+  that the value of stock, plant, and implements which
+  were really his own would be about sufficient to pay his
+  debts, leaving himself a free man with the clothes he
+  stood up in, and nothing more.
+  <C vi>
+  <P 88>
+  THE FAIR -- THE JOURNEY -- THE FIRE
+  TWO months passed away. We are brought on to a
+  day in February, on which was held the yearly statute
+  or hiring fair in the county-town of Casterbridge.
+  At one end of the street stood from two to three
+  hundred blithe and hearty labourers waiting upon Chance
+   -- all men of the stamp to whom labour suggests nothing
+  worse than a wrestle with gravitation, and pleasure
+  nothing better than a renunciation of the same among
+  these, carters and waggoners were distinguished by
+  having a piece of whip-cord twisted round their hats;
+The tables below show then 10 most frequent n-grams (n byte sequences) in BOOK1 for n from 1 to 5, and the 10 most frequent words, bigrams, and trigrams. (2 or 3 word sequences). Words (but not n-grams) were counted as sequences of letters with other punctuation ignored.
+
+    Count n=1  Count n=2  Count n=3   Count  n=4   Count  n=5     Words       Bigrams        Trigrams
+    ---------  --------   ---------   ----------   -----------    ----------  -----------    ------------------
+    125551     20452 e    11229  th    7991  the    5869  the     7079 the    890 of the     127 I don t
+     72431 e   17470 he    9585 the    6366 the     3238  and     4071 and    648 in the      38 I can t
+     50027 t   17173  t    8989 he     3771 and     1918 , and    3760 of     401 to the      36 one of the
+     47836 a   15995 th    4728 ing    3647  and    1590  was     3701 a      297 and the     34 don t know
+     44795 o   13649  a    4666 and    3373 ing     1407  that    3565 to     292 to be       30 would have been
+     40919 n   13255 d     4564 nd     3179  of     1356 n the    2265 in     268 in a        30 the end of
+     37561 h   11153 in    4539  an    2966  to     1262 that     2217 I      254 of a        30 It was a
+     37007 i   10937 t     4501 ed     1942 , an    1056 d the    1966 was    231 don t       28 out of the
+     36788 s   10749 s     3936  to    1853  in     1050  with    1536 that   225 at the      26 to be a
+     32889 r    9974 er    3756 ng     1843  was    1030 of th    1430 her    201 from the    24 I won t
+2.1.2. PIC
+PIC is an uncompressed FAX scan of a page of a French textbook shown below. The image is represented by scanning in rows from the top left using a 1 for black or 0 for white. The bits are packed 8 to a byte (MSB first) with 216 bytes per row. The file has no header. It can be viewed in some imaging software as a .pbm file by appending the following two lines of text to the beginning.
+
+    P4
+    1728 2376
+pic piclarge
+
+Left: PIC (reduced in size). Right: closeup of PIC.
+
+2.1.3. GEO
+GEO contains seismic data in IBM 32 bit floating point format, which is now obsolete. Each number has a sign bit (1 if negative), a 7 bit exponent, and a 24 bit mantissa representing a fraction between 0 and 1. The number is decoded as sign x mantissa x 16exponent - 64. The decoded data is graphed below. Each line represents one data sequence of either 1344 or 320 samples starting at the top. The file has a repeating structure with a 200 byte header (not shown) preceding each sequence.
+
+geo
+
+GEO
+
+The numeric values range from -147504 to 159280. Values have at most 16 bits of precision. Thus, the last 8 bits of all of the mantissa values are 0. The points are further rounded as follows: between -240 and 240, all values are rounded to a multiple of 1/64. Other values with magnitudes less than 960 are rounded to 1/16. Between 960 and 4048, values are rounded to multiples of 1/4. Between 4048 and 61440, values are rounded to integers. Above 61440, values are rounded to multiples of 16.
+
+2.1.4. Results
+Early tests sometimes used an 18 file version of the corpus that included 4 additional papers (PAPER3 through PAPER6). Programs were often ranked by measuring bits per character (bpc) on each file separately and reporting them individually or taking the average. Simply adding the compressed sizes is called a "weighted average" since it is weighted toward the larger files.
+
+The Calgary corpus is no longer widely used due to its small size. However, it has been used since 1996 in an ongoing compression challenge run by Leonid A. Broukhis with small cash prizes. The best compression ratios established as of Feb. 2010 are as follows.
+
+Table. Calgary Compression Challenge History
+
+     Size     Date        Name
+    ------   -------   --------------------
+    759,881  Sep 1997  Malcolm Taylor
+    692,154  Aug 2001  Maxim Smirnov
+    680,558  Sep 2001  Maxim Smirnov
+    653,720  Nov 2002  Serge Voskoboynikov
+    645,667  Jan 2004  Matt Mahoney
+    637,116  Apr 2004  Alexander Rhatushnyak
+    608,980  Dec 2004  Alexander Rhatushnyak
+    603,416  Apr 2005  Przemyslaw Skibinski
+    596,314  Oct 2005  Alexander Rhatushnyak
+    593,620  Dec 2005  Alexander Rhatushnyak
+    589,863  May 2006  Alexander Rhatushnyak
+    580,170  Jul 2010  Alexander Rhatushnyak
+The rules of the Calgary challenge specify that the compressed size include the size of the decompression program, either as a Windows or Linux executable file or as source code. This is to avoid programs that cheat by hiding information from the corpus in the decompression program. Furthermore, the program and compressed files must either be packed in an archive (in one of several specified formats), or else 4 bytes plus the length of each file name is added. This is to prevent cheating by hiding information in the file names and sizes. Without such precautions, programs like barf could claim to compress to zero bytes.
+
+Submissions prior to 2004 are custom variants of compressors by the authors based on PPM algorithms (rk for Taylor, slim for Voskoboynikov, ppmn for Smirnov). Subsequent submissions are variants of the open source paq6, a context mixing algorithm. The 2010 submission is based on paq8.
+
+The following are the compressed sizes and times for some compressors on the file calgary.tar, a TAR file containing a concatenation of the 14 files. Compression times (CT) and decompression times (DT) are process times (not wall times) in seconds and are measured on a 2 GHz T3200 under Windows Vista. Underlined values indicate the Pareto frontier, meaning that no other program is both faster and higher ranked. When options are shown, they are usually set for maximum or nearly maximum compression at the expense of speed and memory (up to 1 GB). However, memory usage is not critical because of the small size of the test data. Some programs are tested again with default options. The decompression program size is not included. The year is for the version tested. Many programs have more than one author. The listed author is for the tested version.
+
+
+    calgary.tar   CT    DT    Program            Options       Algorithm Year Author
+    ----------- ----- -----   -------            -------       --------- ---- ------
+      595,533   411   401     paq8l              -6            CM        2007 Matt Mahoney
+      598,983   462   463     paq8px_v67         -6            CM        2009 Jan Ondrus
+      605,656   182   197     paq8f              -6            CM        2005 Matt Mahoney
+      610,871   549   528     paqar 4.1          -6            CM        2006 Alexander Rhatushnyak
+      643,746    59    60     fp8                -6            CM        2010 Jan Ondrus
+      644,190    19.9  19.9   zpaq 1.10          ocmax.cfg     CM        2009 Matt Mahoney
+      647,110   140   138     paq6               -8            CM        2003 Matt Mahoney
+      647,440     7.6   7.3   nanozip 0.07a      -cc           CM        2009 Sami Runsas
+      666,216     9.1   9.4   durilca 0.5                      PPM       2006 Dmitry Shkarin
+      669,497     8.5   8.1   ppmonstr J                       PPM-12    2006 Dmitry Shkarin
+      674,145    22.6  22.8   slim 23d                         PPM-32    2004 Serge Voskoboynikov
+      676,904    12.4  12.3   paq9a              -6            LZP+CM    2007 Matt Mahoney
+      681,419    10.9  10.2   xwrt 3.2           -l14          Dict+CM   2007 Przemyslaw Skibinski
+      682,512     8.7   9.3   lpaq1              6             CM        2007 Matt Mahoney
+      682,581    51.2  51.6   pimple2                          CM        2006 Ilia Muraviev
+      686,139     9.5   8.8   lpaq9m             8             CM        2009 Alexander Rhatushnyak
+      694,050     9.0   8.6   epm r2                           PPM       2003 Serge Osnach
+      696,850    43.9  44.5   ash 04a                          CM        2003 Eugene D. Shelwien
+      699,191     7.6   7.4   zpaq 1.10          ocmid.cfg     CM        2009 Matt Mahoney
+      705,962     6.9   7.0   bit 0.7            -p=5          CM        2008 Osman Turan
+      706,911     5.0   5.2   cmm4                             CM        2008 Christopher Mattern
+      716,731    18.7  18.7   paq1                             CM        2001 Matt Mahoney
+      716,734   103    18.2   enc                              CM        2003 Serge Osnach
+      720,980     8.7   8.5   tc 5.2dev2                       CM        2007 Ilia Muraviev
+      725,423     5.0   4.3   ccmx               7             CM        2008 Christian Martelock
+      731,926    10.2  10.0   bee 0.79           -m3 -d8       PPM       2005 Andrew Filinsky, Melchiorre Caruso
+      733,864     5.0   4.1   uharc 0.6b         -mx -md32768  PPM       2005 Uwe Herklotz
+      738,016     3.8   3.6   ccm                7             CM        2008 Christian Martelock
+      741,419    64.4  65.5   ocamyd 1.66 test1  -m0 -s8 -f    DMC       2008 Frank Schwellinger
+      743,070     1.7   1.4   ctxf               -me           PPM       2003 Nikita Lesnikov
+      743,351     1.4   0.53  nanozip 0.07a                    BWT       2009 Sami Runsas
+      745,162   662   448     bwmonstr 0.02                    BWT       2009 Sami Runsas
+      754,037     1.8   1.8   ppmvc              -o16 -m256    ROLZ+PPM  2006 Przemyslaw Skibinski
+      754,243     1.4   1.4   ppmd J             -o16 -m256    PPM       2006 Dmitry Shkarin
+      769,400     8.5   0.62  mcomp_x32 2.00     -mf3x         ROLZ      2008 Malcolm Taylor
+      773,141     0.93  0.98  ppms J             -o6           PPM       2006 Dmitry Shkarin
+      774,397     1.1   0.62  bsc 1.0.3                        BWT       2010 Ilya Grebnov
+      775,647     3.6   3.7   ppmx 0.5                         PPM       2010 Ilia Muraviev
+      776,262    79.4   0.87  quark 0.95r beta   -m1 -d25 -l8  LZ77      2006 Frederic Bautista
+      776,273     9.6   9.7   boa 0.58b                        PPM       1998 Ian Sutton
+      778,760    18.7  18.7   acb 2.00a                        LZ77      1997 George Buyanovsky
+      780,549     0.93  0.71  bsc 1.0.3          -m2           ST5       2010 Ilya Grebnov
+      783,884     1.4   1.1   bcm 0.10-x86                     BWT       2009 Ilia Muraviev
+      784,981     3.9   4.0   px 1.0                           CM        2006 Ilia Muraviev
+      785,427    14.1   6.9   m03exp             32MB          BWT       2005 Michael Maniscalco, mij4x
+      785,541     2.3   1.8   m03 0.2 alpha      4000000       BWT       2009 Michael Maniscalco
+      787,007     1.6   0.72  sbc 0.970r2        -m3 -b63      BWT       2002 Sami Runsas
+      787,653     0.73  0.73  dark 0.51                        BWT       2007 Malyshev Dmitry Alexandrovich
+      791,446     2.3   2.0   uhbc 1.0           -m3 -cf       BWT       2003 Uwe Herklotz
+      794,255     0.84  0.70  GRZipII 0.2.4                    LZP+BWT   2004 Ilya Grebnov
+      798,705    10.3   3.8   bbb                cf            BWT       2006 Matt Mahoney
+      800,402     0.96  0.87  mcomp_x32 2.00     -mw           BWT       2008 Malcolm Taylor
+      804,992     0.57  0.67  ppmd J                           PPM-4     2006 Dmitry Shkarin
+      806,208     1.1   0.57  bssc 0.95a         -b16383       BWT       2005 Sergeo Sizikov
+      812,123     3.1   2.8   lzpxj              9             LZP+PPM   2007 Ilia Muraviev, Jan Ondrus
+      816,982     3.1   3.3   mcomp_x32 2.00     -mc           DMC       2008 Malcolm Taylor
+      820,307     3.6   0.42  xwrt 3.2           -l6           Dict+LZMA 2007 Przemyslaw Skibinski
+      824,573     1.5   0.16  7zip 9.08a                       LZMA      2009 Igor Pavlov
+      831,828     0.36  0.50  rings 1.6          10            BWT       2009 Nania Francesco Antonio
+      832,035     6.4   6.6   p12                              NN        2000 Matt Mahoney
+      842,265     5.9   5.9   p6                               NN        2000 Matt Mahoney
+      842,696     0.95  0.70  szip               -b41          ST6       1998 Michael Schindler
+      851,043     1.9   1.8   hook 1.4           512           LZP+DMC   2009 Nania Francesco Antonio
+      858,791     8.7   0.23  lzpm 0.15          9             ROLZ      2008 Ilia Muraviev
+      860,097     0.60  0.39  bzip2 1.0.3        -9            BWT       2005 Julian Seward
+      860,984     4.6   0.53  flashzip 0.99b8    -m3 -c7 -b8   ROLZ      2010 Nania Francesco Antonio
+      863,350     3.0   0.06  cabarc 1.00.0601   -m lzx:21     LZX       1997 Microsoft Corp.
+      864,499    17.0   4.2   qc                 -8            LZP?      2006 Denis Kyznetsov
+      870,948     1.9   0.37  balz 1.15                        LZ77      2008 Ilia Muraviev
+      872,028     5.2   0.31  lzturbo 0.9        -m59          LZ77      2007 Hamid Bouzidi
+      873,681     1.4   0.44  quad 1.12          -x            ROLZ      2007 Ilia Muraviev
+      876,234     8.8   7.3   ha 0.98            a2            PPM-4     1993 Harri Hirvola
+      885,273     1.3   1.3   tarsalzp                         LZP       2007 Piotr Tarsa
+      885,954     6.9   2.2   qazar              -d9 -x7 -l7   LZP       2006 Denis Kyznetsov
+      900,048     2.6   2.9   dmc                100000000     DMC       1987 Gordon V. Cormack
+      905,889     1.2   0.17  csc31              -m3 -d7       LZ77      2009 Fu Siyuan
+      917,136     8.3   0.16  packet 0.91        -m6 -s9       LZ77      2009 Nania Francesco Antonio
+      935,598    43.5  43.6   fpaq2                            PPM+CM    2006 Nania Francesco Antonio
+      948,568     0.67  0.75  winturtle 1.60     512MB         PPM       2008 Nania Francesco Antonio
+      975,889    35.8   0.09  kzip                             LZ77      2006 Ken Silverman
+      979,349     0.37  0.40  sr2                              SR        2007 Matt Mahoney
+      996,074     1.2   0.15  rar 2.50                         LZ77      1999 Eugene Roshal
+      997,381    33.5  33.9   ctw                              CTW       2002 Erik Franken, Marcel Peeters
+    1,001,364     0.31  0.12  thor               e5            LZ77      2007 Oscar Garcia
+    1,004,728     0.33  0.36  bzp                              LZP       2008 Nania Francesco Antonio
+    1,011,786     0.47  0.03  tornado                          LZ77      2008 Bulat Ziganshin
+    1,016,779     3.0   0.90  ha 0.98                          LZ77      1993 Harri Hirvola
+    1,020,896     5.6   1.0   cm     -m25659172 -t3152896 -o4  PPM-4     1997 Bulat Ziganshin
+    1,021,485     1.0   0.32  xwrt               -l3           Dict+LZ77 2007 Przemyslaw Skibinski
+    1,021,821     0.64  0.17  pkzip 2.04e        -ex           LZ77      1993 Phil Katz, PKWARE Inc.
+    1,022,414     0.09  0.11  slug 1.27b                       ROLZ      2007 Christian Martelock
+    1,022,810     0.68  0.11  gzip 1.3.5         -9            LZ77      2002 Jean-loup Gailly, Mark Adler
+    1,023,037     0.68  0.10  zip 2.32           -9            LZ77      2005 Jean-loup Gailly, Mark Adler
+    1,029,644     0.34  0.11  zip 2.32                         LZ77      2005 Jean-loup Gailly, Mark Adler
+    1,045,532     0.31  0.14  thor               e4            LZP       2007 Oscar Garcia
+    1,053,371     4.2   4.2   fpaq3                            o3        2006 Nania Francesco Antonio
+    1,093,944     0.12  0.09  etincelle                        ROLZ      2010 Yann Collet
+    1,093,958     3.6   5.1   lzgt3a                           LZ77      2008 Gerald R. Tamayo
+    1,112,774     1.4   0.17  lzuf                             LZ77      2009 Gerald R. Tamayo
+    1,131,100    23.1  24.7   lcssr 0.2                        SR        2007 Frank Schwellinger
+    1,137,453    30.9   0.03  lzss 0.01          ex            LZSS      2008 Ilia Muraviev
+    1,140,859     2.8   0.46  ulz                c6            LZ77      2010 Ilia Muraviev
+    1,155,175     8.4   9.1   arbc2z                           PPM-2     2006 David A. Scott
+    1,156,301     0.50  0.31  lzc 0.08                         LZ77      2007 Nania Francesco Antonio
+    1,162,904     1.2   0.04  lzop 1.01                        LZ77      2003 Markus F.X.J. Oberhumer
+    1,237,612     0.08  0.08  zhuff                            LZ77      2009 Yann Collet
+    1,243,434     6.7   0.09  lzw                              LZW       2008 Ilia Muraviev
+    1,267,256     0.20  0.20  srank              -C8 -O3       SR        1997 Peter Fenwick
+    1,319,521     1.6   0.22  compress                         LZW       1985 Spencer Thomas et. al.
+    1,331,783     1.0   1.0   fastari                          o2        2006 Nania Francesco Antonio
+    1,337,403     0.14  0.03  quicklz 1.30                     LZ77      2007 Lasse Mikkel Reinhold
+    1,340,008     0.16  0.09  brieflz                          LZ77      2004 Joergen Ibsen
+    1,401,857     0.12  0.06  lzrw3-a                          LZ77      1991 Ross Williams
+    1,430,672     1.0   0.05  lzss               e             LZSS      2008 Ilia Muraviev
+    1,537,191     1.8   0.02  bpe              5000 4096 200 3 BPE       1994 Philip Gage
+    1,545,939     0.08  0.06  lzrw3                            LZ77      1991 Ross Williams
+    1,601,207     0.65  0.64  fpaq0f2                          o0 (ind)  2008 Matt Mahoney
+    1,615,386     0.06  0.04  lzrw2                            LZ77      1991 Ross Williams
+    1,669,277     0.08  0.04  snappy 1.0.1                     LZ77      2011 Google
+    1,670,642     0.50  0.06  lzrw5                            LZW       1991 Ross Williams
+    1,685,882     0.36  0.40  fpaq0p                           o0 (adapt)2007 Ilia Muraviev
+    1,691,924     0.21  0.14  flzp                             LZP       2008 Matt Mahoney
+    1,725,464     0.06  0.06  lzrw1-a                          LZ77      1991 Ross Williams
+    1,737,702     0.04  0.03  lzrw1                            LZ77      1991 Ross Williams
+    1,884,160     0.03  0.03  lznt1/NTFS                       LZSS      1995 Microsoft Corp.
+    1,903,024     0.70  0.76  fpaq0                            o0 (stat) 2004 Matt Mahoney
+    1,938,635     0.06  0.03  lzp2                             LZP       2009 Yann Collet
+    3,152,896                 uncompressed
+
+Algorithms (when known) are as follows. They are described in more detail throughout the rest of this book. "CM" means "context mixing". "Dict" means dictionary encoding. "PPM-N" means order-N PPM. "oN" means order-N context modeling (stationary, adaptive, or indirect). "STn" means an order-n sort (Schindler) transform. "NN" means neural network. "SR" means symbol ranking.
+
+2.2. Large Text Compression Benchmark
+The Large Text Compression Benchmark consists of a single Unicode encoded XML file containing a dump of Wikipedia text from Mar. 3, 2006, truncated to 109 bytes (the file enwik9). Its stated goal is to encourage research into artificial intelligence, specifically, natural language processing. As of Feb. 2010, 128 different programs (889 including different versions and options) were evaluated for compressed size (including the decompression program source or executable and any other needed files as a zip archive), speed, and memory usage. The benchmark is open, meaning that anyone can submit results.
+
+Programs are ranked by compressed size with options selecting maximum compression where applicable. The best result obtained is 127,784,888 bytes by Dmitry Shkarin for a customized version of durilca using 13 GB memory. It took 1398 seconds to compress and 1797 seconds to decompress using a size-optimized decompression program on a 3.8 GHz quad core Q9650 with 16 GB memory under 64 bit Windows XP Pro on July 21, 2009. The data was preprocessed with a custom dictionary built from the benchmark and encoded with order 40 PPM. durilca is a modified version of ppmonstr by the same author. ppmonstr is in turn a slower but better compressing ppmd program which is used for maximum compression in several archivers such as rar, WinZip, 7zip, and freearc.
+
+By comparison, zip -9 compresses to 322,649,703 bytes in 104 seconds and decompresses in 35 seconds using 0.1 MB memory. It is ranked 92'nd.
+
+The benchmark shows a 3 way trade off between compressed size, speed, and memory usage. The two graphs below show the Pareto frontier, those compressors for which no other compressors both compress smaller and faster (or smaller and use less memory). The graphs are from Aug. 2008, but the current data shows a similar trend. In particular, no single algorithm (shown in parenthesis) is the "best".
+
+ltcbspeed
+
+Pareto frontier: compressed size vs. compression time as of Aug. 18, 2008 (options for maximum compression).
+
+ltcbmemory
+
+Pareto frontier: compressed size vs. memory as of Aug. 18, 2008 (options for maximum compression).
+
+Note that speed tests may be run on different machines, and that only the options for maximum compression for each program are used. Nevertheless, the general trend remains valid. Individual compressors often have options that allow the user to make the same 3 way trade off.
+
+The reason that the benchmark is so dependent on memory is that there are string matches that span the entire length of the 1 GB file. This can be seen in the analysis below. The blue area at the top right of the image represents matches between the beginning and end of the file. The dark band in the middle of the image is due to several thousand Wikipedia articles for U.S. cities that were apparently generated from census data by a program. This region is highly compressible.
+
+e9
+
+String repeat analysis of enwik9 with fv.
+
+2.3. Hutter Prize
+The Hutter prize is based on the first 108 bytes (the file enwik8) of the Large Text Compression benchmark with similar rules and goals. It is a contest in which prize money (500 euros per 1% gain) is awarded for improvements of 3% or more over the previous submission, subject to time and memory limits on the test computer. The best result is 15,949,688 bytes for an archive and a decompresser submitted by Alexander Rhatushnyak on May 23, 2009. It requires 7608 seconds and 936 MB memory to decompress on a 2 GHz dual core T3200 under 32 bit Windows Vista. The submission is based on two open source, context mixing programs paq8hp12 and lpaq9m with a custom dictionary for preprocessing.
+
+By comparison, zip -9 compresses the same data to 36,445,373 bytes and uncompresses in 3.5 seconds using 0.1 MB memory.
+
+2.4. Maximum Compression
+The maximum compression benchmark has two parts: a set of 10 public files totaling 53 MB, and a private collection of 510 files totaling 301 MB. In the public data set (SFC or single file compression), each file is compressed separately and the sizes added. Programs are ranked by size only, with options set for best compression individually for each file. The set consists of the following 10 files:
+
+     842,468 a10.jpg      - a high quality 1152 x 864 baseline JPEG image of a fighter jet.
+   3,870,784 acrord32.exe - x86 executable code - Acrobat Reader 5.0.
+   4,067,439 english.dic  - an alphabetically sorted list of 354,941 English words.
+   4,526,946 FlashMX.pdf  - PDF file with embedded JPEG and zipped BMP images.
+  20,617,071 fp.log       - web server log, ASCII text.
+   3,782,416 mso97.dll    - x86 executable code from Microsoft Office.
+   4,168,192 ohs.doc      - Word document with embedded JPEG images.
+   4,149,414 rafale.bmp   - 1356 x 1020 16 bit color image in 24 bit RGB format.
+   4,121,418 vcfiu.hlp    - OCX help file - binary data with embedded text.
+   2,988,578 world95.txt  - ASCII text - 1995 CIA World Factbook.
+The top ranked program as of Dec. 31, 2009 with a total size of 8,813,124 bytes is paq8px, a context mixing algorithm with specialized models for JPEG images, BMP images, x86 code, text, and structured binary data. WinRK 3.1.2, another context mixing algorithm, is top ranked on 4 of the files (txt, exe, dll, pdf). WinRK uses a dictionary which is not included in the total size. 208 programs are ranked. zip 2.2 is ranked 163 with a size of 14,948,761.
+
+In the second benchmark or MFC (multiple file compression), programs are ranked by size, compression speed, decompression speed, and by a formula that combines size and speed with time scaled logarithmically. The data is not available for download. Files are compressed together to a single archive. If a compressor cannot create archives, then the files are collected into an uncompressed archive (TAR or QFC), which is compressed.
+
+In the MFC test, paq8px is top ranked by size. freearc is top ranked by combined score, followed by nanozip, winrar, and 7zip. All are archivers that detect file type and apply different algorithms depending on type.
+
+2.5. Generic Compression Benchmark
+The Generic Compression Benchmark has the goal of evaluating compression algorithms in the context of universal prediction or intelligence, as defined by Legg and Hutter (2006). By this definition, data sources are assumed to have a universal Solomonoff distribution, i.e. generated by random programs with a preference for smaller or simpler programs. The evidence for such a distribution is the success of applying Occam's Razor to machine learning and to science in general: the simplest theories that fit the observed data tend to be the best predictors. The purpose of the test is to find good compression algorithms that are not tuned to specific file types.
+
+The benchmark does not publish any test data. Rather, it publishes a program to generate the data from a secret seed or an internally hardware generated random number. The data consists of the bit string outputs of one million random Turing machines, truncated to 256 bits and packed into null terminated byte strings. The average output size is about 6.5 MB. The test allows public verification while eliminating the need to measure the decompresser size because it is not possible to hide the test data in the decompresser without knowing the cryptographic random number seed. The test produces repeatable results with about 0.05% accuracy. Programs are ranked by the ratio of compressed output to the compressed output of a reference compressor (ppmonstr) to improve repeatability.
+
+Unfortunately the benchmark fails to completely eliminate the problem of tuning compressors to public benchmarks. The top ranked program is a stationary context mixing model configuration implemented in zpaq using a preprocessor by J. Ondrus that splits each string into an incompressible prefix and a bit repeat instruction. Its score is 0.8750, compared to 1.3124 for zip -9. Generally, however, the rank order of compressors is similar to that of other benchmarks.
+
+2.6. Compression Ratings
+Compression Ratings by Sami Runsas ranks programs on 5.4 GB of various data types from public sources using a score that combines size and speed. The data includes English text, Windows executable code, RGB and grayscale images, CD quality audio, and a mix of data types from two video games. Some of the 10 data sets contains multiple files. Single file compressors are tested on an equivalent tar file. Compressed sizes include the size of the decompression program source code or executable program compressed with 7zip. Run times are measured from RAM-disk to avoid I/O delays.
+
+Programs must pass a qualifying round with minimum compression ratio and time requirements on a small data set. The benchmark includes a calculator that allows the user to rank compressors using different weightings for the importance of size, compression speed, and decompression speed. The default scale is "1/10 lower ratio or twice the total time is worth half the rating". This is effectively the same formula used by maximumcompression.com. As of June 2012, 130 programs were tested with 682 combinations of options. The top ranked programs for the default settings were nanozip followed by freearc, CCM, flashzip, and 7-zip. (Runsas is the author of nanozip.) There are additional benchmarks that compare BWT based compressors and bzip2-compatible compressors, and additional benchmarks for some special file types.
+
+2.7. Other Benchmarks
+Some other benchmarks are mentioned briefly.
+
+Squeeze Chart by Stephen Busch, ranks programs on 6.4 GB of mostly private data of various types by size only. The top ranked is paq8px_v67 as of Dec. 28, 2009.
+
+Monster of Compression by Nania Francesco Antonio, ranks programs by size on 1,061,420,156 bytes of mostly public data of various types with a 40 minute time limit. There are separate tests for single file compressors and archivers. As of Dec. 20, 2009 the top ranked archiver is nanozip 0.7a and the top ranked file compressor is ccmx 1.30c. Both use context mixing.
+
+UCLC by Johan de Bock contains several benchmarks of public data for compressors with a command line interface (which is most of them). As of Feb. 2009, paq8i or paq8p was top ranked by size on most of them.
+
+Metacompressor is an automated benchmark that allows developers to submit programs and test files and compare size (excluding the decompresser), compression time, and decompression time.
+
+Xtreme Compression compares 60 compression/option combinations with their own product for size and speed on a 80 GB synthetic database file. After their product, which works only on database tables, nanozip -nm -cc ranks next, followed by zpaq (mid.cfg), as of Nov. 2011.
+
+2.8. File System Benchmarks
+Meyer and Bolosky (2011), in a study of practical deduplication, examined the contents of 857 Windows file systems among Microsoft employees from a wide range of departments in 2009. The table below gives the approximate distribution by type, as compared to similar studies by them in 2000 and 2004.
+
+  2000  2004  2009  Data type
+  ----  ----  ----  ---------
+   2%    3%   13%   No filename extension
+  13%    10%  10%   .dll (x86 dynamic library)
+   3%    4%    8%   .lib (x86 static library)
+         5%    7%   .vhd (virtual hard drive)
+   7%    5%    7%   .pdb (database)
+   6%    4%    4%   .exe (x86 executable)
+   4%          3%   .pch (precompiled C/C++ header file)
+   3%    4%    2%   .cab (compressed archive)
+         4%    1%   .wma (compressed audio)
+               1%   .iso (CD/DVD image)
+   5%    4%         .pst (email application database)
+   4%    3%         .mp3 (compressed audio)
+   3%               .chm (compressed HTML help file)
+  49%   55%   43%   Other
+The average file system in 2009 had a capacity of 150 GB and was 40% full. The fraction in use remained nearly constant since 2000 in spite of a doubling of disk capacity almost every year. Average file size also remained nearly constant at about 4 KB since 1981. However the number of files increased, to an average of 225,000 files in 36,000 directories in 2009. File size varies widely. About half of all data is in files larger than 25 MB. One fourth is in files smaller than 3 MB and one fourth in files larger than 1 GB. These percentiles are also increasing as the number of larger files grow. Half of all data was in files larger than 1 MB in 2000 and 5 MB in 2004.
+
+An average file system in 2009 could be compressed by 22% by whole file deduplication, i.e. reduced to 78% of original size by replacing identical copies of files with links. Compression could be increased to 28% by dividing files into 64 KB blocks and removing duplicate blocks, or to 31% using 8 KB blocks. If alignment restrictions are removed, then compression increases to 39% by replacing duplicate segments larger than 64 KB, or 42% using 8 KB segments. If links are allowed to point to duplicates on other file systems, then compression improves by about 3 percentage points for each doubling of the number of computers. For the entire 857 file systems, whole file deduplication compressed by 50%, and 8K segments by 69%.
+
+The obvious application of deduplication is incremental backups. It is only necessary to back up data that has changed. In the 2009 study, the median time since last modification was 100 days. 7% of files of files were modified within one week, and 75% within one year.
+
+3. Coding
+A code is an assignment of bit strings to symbols such that the strings can be decoded unambiguously to recover the original data. The optimal code for a symbol with probability p will have a length of log2 1/p bits. Several efficient coding algorithms are known.
+
+3.1. Huffman Coding
+Huffman (1952) developed an algorithm that calculates an optimal assignment over an alphabet of n symbols in O(n log n) time. deflate (zip) and bzip2 use Huffman codes. However, Huffman codes are inefficient in practice because code lengths must be rounded to a whole number of bits. If a symbol probability is not a power of 1/2, then the code assignment is less than optimal. This coding inefficiency can be reduced by assigning probabilities to longer groups of symbols but only at the cost of an exponential increase in alphabet size, and thus in run time.
+
+The algorithm is as follows. We are given an alphabet and a probability for each symbol. We construct a binary tree by starting with each symbol in its own tree and joining the two trees that have the two smallest probabilities until we have one tree. Then the number of bits in each Huffman code is the depth of that symbol in the tree, and its code is a description of its path from the root (0 = left, 1 = right). For example, suppose that we are given the alphabet {0,1,2,3,4,5,6,7,8,9} with each symbol having probability 0.1. We start with each symbol in a one-node tree:
+
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+Because each small tree has the same probability, we pick any two and combine them:
+
+       .2
+       / \
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+Continuing,
+
+       .2      .2      .2      .2
+       / \     / \     / \     / \ 
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+At this point, 8 and 9 have the two lowest probabilities so we have to choose those:
+
+       .2      .2      .2      .2      .2
+       / \     / \     / \     / \     / \
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+Now all of the trees have probability .2 so we choose any pair of them:
+
+           .4
+           / \
+          /   \
+         /     \
+       .2      .2      .2      .2      .2
+       / \     / \     / \     / \     / \
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+We choose any two of the three remaining trees with probability .2:
+
+           .4              .4
+           / \             / \
+          /   \           /   \
+         /     \         /     \
+       .2      .2      .2      .2      .2
+       / \     / \     / \     / \     / \
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+Now the two smallest probabilities are .2 and one of the .4:
+
+                               .6
+                               / \
+                              /   \
+                             /     \
+           .4              .4       \
+           / \             / \       \
+          /   \           /   \       \
+         /     \         /     \       \
+       .2      .2      .2      .2      .2
+       / \     / \     / \     / \     / \
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+Now the two smallest are .4 and .6. After this step, the tree is finished. We can label the branches 0 for left and 1 for right, although the choice is arbitrary.
+
+                       1.0
+                       / \
+                      /   \
+                     /     \
+                    /       \
+                 0 /         \ 1
+                  /           \
+                 /             \
+                /              .6
+               /               / \
+              /             0 /   \ 1
+             /               /     \
+           .4              .4       \
+           / \             / \       \
+        0 /   \ 1       0 /   \ 1     \
+         /     \         /     \       \
+       .2      .2      .2      .2      .2
+       / \     / \     / \     / \     / \
+     .1  .1  .1  .1  .1  .1  .1  .1  .1  .1
+      0   1   2   3   4   5   6   7   8   9
+From this tree we construct the code:
+
+  Symbol Code
+  ------ ----
+    0    000
+    1    001
+    2    010
+    3    011
+    4    1000
+    5    1001
+    6    1010
+    7    1011
+    8    110
+    9    111
+A code may be static or dynamic. A static code is computed by the compressor and transmitted to the decompresser as part of the compressed data. A dynamic code is computed by the compressor and periodically updated, but not transmitted. Instead, the decompresser reconstructs the code using exactly the same algorithm using the previously decoded data to estimate the probabilities. Neither method compresses better because any space saved by not transmitting the model is paid back by having less data with which to estimate probabilities.
+
+Huffman codes are typically static, mainly for speed. The compressor only needs to compute the code once, using the entire input to compute probabilities. To transmit a Huffman table, it is only necessary to send the size of each symbol, for example: (3,3,3,3,4,4,4,4,3,3). Both the compressor and decompresser would then assign codes by starting with the shortest symbols, counting up from 0, and appending a 0 bit whenever the code gets longer. This would result in the following different but equally effective code:
+
+  Symbol Size Code
+  ------ ---- ----
+    0      3  000
+    1      3  001
+    2      3  010
+    3      3  011
+    8      3  100
+    9      3  101
+    4      4  1100
+    5      4  1101
+    6      4  1110
+    7      4  1111
+For file compression, Huffman coded data still needs to be packed into bytes. JPEG packs bits in MSB (most significant bit) to LSB (least significant bit) order. For example, the codes 00001 00111 would be packed as 00001001 11...... . The deflate format used in zip, gzip, and png files packs bits in LSB to MSB order, as if each byte is written backward, i.e. 10010000 ......11 .
+
+One other complication is that the last byte has to be padded in such a way that it is not interpreted as a Huffman code. JPEG does this by not assigning any symbol to a code of all 1 bits, and then padding the last byte with 1 bits. Deflate handles this by reserving a code to indicate the end of the data. This tells the decoder not to decode the remaining bits of the last byte.
+
+3.2. Arithmetic Coding
+Huffman coding has the drawback that code lengths must be a whole number of bits. This effectively constrains the model to probabilities that are powers of 1/2. The size penalty for modeling errors is roughly proportional to the square of the error. For example, a 10% error results in a 1% size penalty. The penalty can be large for small codes. For example, the only possible ways to Huffman code a binary alphabet is to code each bit as itself (or its opposite), resulting in no compression.
+
+Arithmetic coding (Rissanen, 1976), also called range coding, does not suffer from this difficulty. Let P be a model, meaning that for any string x, P(x) is the probability of that string. Let P(< x) be the sum of the probabilities of all strings lexicographically less than x. Let P(≤ x) = P(< x) + P(x). Then the arithmetic code for a string x is the shortest binary number y such that P(< x) ≤ y < P(≤ x). Such a number can always be found that is no more than 1 bit longer than the Shannon limit log2 1/P(x).
+
+An arithmetic code can be computed efficiently by expressing P(x) as a product of successive symbol predictions by the chain rule, P(x) = Πi P(xi | x1x2...xi-1) where xi means the i'th symbol (bit or character) in x. Then the arithmetic code can be computed by updating a range [low, high) (initially [0, 1)) for each symbol by dividing the range in proportion to the probability distribution for that symbol. Then the portion of the range corresponding to the symbol to be coded is used to update the range. As the range shrinks, the leading bits of low and high match and can be output immediately because the code y must be between them. The decompresser is able to decode y by making an identical sequence of predictions and range reductions.
+
+Most modern data compressors use arithmetic coding. Early compressors used Huffman coding because arithmetic coding was patented and because its implementation required multiplication operations, which was slow on older processors. Neither of these issues are relevant today because the important patents have expired and newer processors have fast multiply instructions (faster than memory access).
+
+The most common arithmetic coders code one byte at a time (PPM) or one bit at a time (CM, DMC). Free source code with no licensing restrictions for a bytewise encoder can be found in the source code for ppmd (D. Shkarin). Bitwise coders licensed under GPL can be found in the source code for PAQ based compressors including FPAQ, LPAQ, and ZPAQ, the BWT compressor BBB, and the symbol ranking compressor SR2. The simplest of these is the order 0 coder fpaq0.
+
+The following is the arithmetic coder from zpaq 1.10 It encodes bit y (0 or 1) with probability p = P(1) * 65536 (a scaled 16 bit number) and codes to FILE* out. The encoder range is represented by two 32 bit integers (unsigned int) low and high, which are initially 1 and 0xffffffff respectively. After the range is split, a 1 is coded in the lower part of the range and a 0 in the upper part. After the range is split and reduced, it is normalized by shifting out any leading bytes that are identical between low and high. The low bits shifted in are all 0 bits for low and all 1 bits for high.
+
+    // Initial state
+    unsigned int low = 1, high = 0xffffffff;
+  
+    // Encode bit y with probability p/65536
+    inline void Encoder::encode(int y, int p) {
+      assert(out);  // output file
+      assert(p>=0 && p<65536);
+      assert(y==0 || y==1);
+      assert(high>low && low>0);
+      unsigned int mid=low+((high-low)>>16)*p+((((high-low)&0xffff)*p)>>16); // split range
+      assert(high>mid && mid>=low);
+      if (y) high=mid; else low=mid+1; // pick half
+      while ((high^low)<0x1000000) { // write identical leading bytes
+        putc(high>>24, out);  // same as low>>24
+        high=high<<8|255;
+        low=low<<8;
+        low+=(low==0); // so we don't code 4 0 bytes in a row
+      }
+    }
+The range split is written to avoid 32 bit arithmetic overflow. It is equivalent to:
+
+     unsigned int mid=low+((unsigned long long)(high-low)*p>>16);
+where (unsigned long long) is a 64 bit unsigned type, which not all compilers support. The initialization of low to 1 instead of 0 and the statement
+
+     low+=(low==0);
+discard a tiny bit of the range to avoid writing 4 consecutive 0 bytes, which the ZPAQ compressor uses to mark the end of the encoded data so it can be found quickly without decoding. This is not a requirement in general. It is not used in the rest of the PAQ series. The decoder looks like this:
+
+    // Initial state
+    unsigned int low=1, high=0xffffffff, curr;
+    for (int i=0; i<4; ++i)
+      curr=curr<<8|getc(in);  // first 4 bytes of input
+  
+    // Return decoded bit from file 'in' with probability p/65536
+    inline int Decoder::decode(int p) {
+      assert(p>=0 && p<65536);
+      assert(high>low && low>0);
+      if (curr<low || curr>high) error("archive corrupted");
+      assert(curr>=low && curr<=high);
+      unsigned int mid=low+((high-low)>>16)*p+((((high-low)&0xffff)*p)>>16); // split range
+      assert(high>mid && mid>=low);
+      int y=curr<=mid;
+      if (y) high=mid; else low=mid+1; // pick half
+      while ((high^low)<0x1000000) { // shift out identical leading bytes
+        high=high<<8|255;
+        low=low<<8;
+        low+=(low==0);
+        int c=getc(in);
+        if (c==EOF) error("unexpected end of file");
+        curr=curr<<8|c;
+      }
+      return y;
+    }
+The decoder receives as input p, the 16 bit probability that the next bit is a 1, and returns the decoded bit. The decoder has one additional variable in its state, the 32 bit integer curr, which is initialized to the first 4 bytes of compressed data. Each time the range is rescaled, another byte is read from FILE* in. high and low are initialized as in the encoder.
+
+One additional detail is how to handle the end of file. Most of the PAQ series compressors encode the file size separately and perform 8 encoding operations per byte. After the last encoding operation, the 4 bytes of either high or low or some value in between must be flushed to the archive because the decoder will read these 4 bytes in.
+
+ZPAQ encodes 9 bits per byte, using a leading 1 bit modeled with probability p = 0 to mark the end of file. The effect on the encoder is to set mid = low and cause 4 bytes to be flushed. After that, 4 zero bytes are written to mark the end of the compressed data. When the end of file bit is decoded, the decoder reads these 4 zero bytes into curr, resulting in low = 1, curr = 0, high = 0xffffffff. Any further decoding would result in an error because the condition low ≤ curr ≤ high fails.
+
+The assertions are not necessary to make the code work. Rather, they are useful because they make the programmer's assumptions explicit in the form of self documenting run time tests. The code is compiled with -DNDEBUG to remove them after debugging.
+
+3.3. Asymmetric Binary Coding
+Most high end compressors use arithmetic coding. However, another possibility with the same theoretical coding and time efficiency for bit strings is asymmetric binary coding or ABC (Duda, 2007). An asymmetric coder has a single n-bit integer state variable x, as opposed to two variables (low and high) in an arithmetic coder. This allows a lookup table implementation. A bit y (0 or 1) with probability p = P(y = 1) (0 < p < 1, a multiple of 2-n) is coded in state x, initially 2n:
+
+    if y = 0 then x := ceil((x+1)/(1-p)) - 1
+    if y = 1 then x := floor(x/p)
+To decode, given x and p
+
+    y = ceil((x+1)*p) - ceil(x*p)  (0 if fract(x*p) < 1-p, else 1)
+    if y = 0 then x := x - ceil(x*p)
+    if y = 1 then x := ceil(x*p)
+x is maintained in the range 2n to 2n+1 - 1 by writing the low bits of x prior to encoding y and reading into the low bits of x after decoding. Because compression and decompression are reverse operations of each other, they must be performed in reverse order by storing the predictions and coded bits in a stack in either the compressor or the decompresser.
