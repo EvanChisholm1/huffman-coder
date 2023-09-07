@@ -1,10 +1,11 @@
 class BinaryNode {
     left?: BinaryNode;
     right?: BinaryNode;
-    value: number;
+    value: number | string;
     probability: number;
+
     constructor(
-        value: number,
+        value: number | string,
         probability: number,
         left?: BinaryNode,
         right?: BinaryNode
@@ -23,6 +24,7 @@ class BinaryNode {
 
 const chars = new Array(10).fill(0).map((_, i) => i);
 const tokens = chars.map((x) => new BinaryNode(x, 0.1));
+tokens.push(new BinaryNode(".", 0.01));
 
 function setValues(node: BinaryNode) {
     if (node.isLeaf()) return;
@@ -68,7 +70,7 @@ function constructTree(nodes: Array<BinaryNode>): BinaryNode {
 function getKeys(
     node: BinaryNode,
     path: string = "",
-    keys: { [key: number]: string } = {}
+    keys: { [key: number | string]: string } = {}
 ) {
     if (node.isLeaf()) {
         keys[node.value] = path;
@@ -82,41 +84,67 @@ function getKeys(
 
 const tree = constructTree(tokens);
 const keys = getKeys(tree);
-console.log(keys);
+const decodeKeys: { [key: string]: string } = {};
+Object.entries(keys).forEach(([k, v]) => (decodeKeys[v] = k));
 
 function encode(inputStr: string, keys: { [key: string]: string }) {
-    const encodedStr = inputStr
+    const encodedStr = `${inputStr}.`
         .split("")
         .reduce((prev, x) => `${prev}${keys[x]}`, "");
 
-    console.log(encodedStr);
     const chars = encodedStr.split("");
     const chunks: number[] = [];
+
     while (chars.length > 0) {
         const chunk = chars.splice(0, 8);
         while (chunk.length < 8) {
             chunk.push("0");
         }
-        console.log(chunk.join(""));
         chunks.push(parseInt(chunk.join(""), 2));
     }
 
-    for (const c of chunks) console.log(c.toString(2));
-
-    // console.log(Math.ceil(encodedStr.length / 8));
     const bytes = new ArrayBuffer(Math.ceil(encodedStr.length / 8));
     const view = new DataView(bytes);
 
-    // view.setUint8(1, 255);
     chunks.forEach((x, i) => {
         view.setUint8(i, x);
     });
 
-    // chunks.forEach((_, i) => {
-    //     console.log(view.getUint8(i).toString(2));
-    // });
-
     return bytes;
 }
 
-encode("9993", keys);
+function decode(
+    bytes: ArrayBuffer,
+    decodeKeys: { [key: string]: string }
+): string {
+    const viewer = new DataView(bytes);
+    let byteString = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+        let currentByteString = viewer.getUint8(i).toString(2);
+        const pad = new Array(8 - currentByteString.length).fill("0").join("");
+        currentByteString = `${pad}${currentByteString}`;
+
+        byteString = `${byteString}${currentByteString}`;
+    }
+
+    const bits = byteString.split("");
+    let index = 0;
+    let decodedText = "";
+    while (bits.length > 0) {
+        if (bits.slice(0, index).join("") in decodeKeys) {
+            const key = bits.splice(0, index).join("");
+            index = 0;
+            const c = decodeKeys[key];
+            if (c === ".") break;
+
+            decodedText += c;
+        }
+
+        index++;
+    }
+
+    return decodedText;
+}
+
+const encodedText = encode("1002384", keys);
+console.log(decode(encodedText, decodeKeys));
