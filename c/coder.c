@@ -116,15 +116,34 @@ bn *buildHuffmanTree(char characters[], float probabilities[], int size) {
     buildMinHeap(priorityQueue);
 
     while(!isSizeOne(priorityQueue)) {
-        bn *left = extractMin(priorityQueue);
-        bn *right = extractMin(priorityQueue);
-
+        left = extractMin(priorityQueue);
+        right = extractMin(priorityQueue);
 
         top = merge(left, right);
         insertPriortyQueue(priorityQueue, top);
     }
 
     return extractMin(priorityQueue);
+}
+
+void printCodes(bn *root, int arr[], int top) {
+    if(root->left) {
+        arr[top] = 0;
+        printCodes(root->left, arr, top + 1);
+    }
+
+    if(root->right) {
+        arr[top] = 1;
+        printCodes(root->right, arr, top + 1);
+    }
+
+    if(root->left == NULL && root->right == NULL) {
+        printf("%c: ", root->val);
+        for (int i = 0; i < top; i++) {
+            printf("%d", arr[i]);
+        }
+        printf("\n");
+    }
 }
 
 int main() {
@@ -184,6 +203,11 @@ int main() {
 
     printf("%f\n", tree->prob);
 
+    int arr[200];
+
+    printCodes(tree, arr, 0);
+
+    // TODO: add clean up
     return 0;
 }
 
