@@ -7,6 +7,7 @@
 #include<stdbool.h>
 
 #define bn struct BinaryNode
+#define pq struct PriorityQueue
 
 struct BinaryNode {
     bn *left;
@@ -14,6 +15,67 @@ struct BinaryNode {
     char val;
     float prob;
 };
+
+struct PriorityQueue {
+    int size;
+    int capacity;
+    bn **array;
+};
+
+pq *createPriorityQueue(int capacity) {
+    pq *priorityQueue = (pq*)malloc(sizeof(pq));
+    priorityQueue->size = 0;
+    priorityQueue->capacity = capacity;
+    priorityQueue->array = (bn**)malloc(priorityQueue->capacity * sizeof(bn*));
+
+    return priorityQueue;
+}
+
+void swapNodes(bn **a, bn **b) {
+    bn *temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+void heapify(pq *priorityQueue, int idx) {
+    int smallest = idx;
+    int left = 2 * idx + 1;
+    int right = 2 * idx + 2;
+
+    if(left < priorityQueue->size && priorityQueue->array[left]->prob < priorityQueue->array[smallest]->prob) {
+        smallest = left;
+    }
+
+    if(right < priorityQueue->size && priorityQueue->array[right]->prob < priorityQueue->array[smallest]->prob) {
+        smallest = right;
+    }
+
+    if(smallest != idx) {
+        swapNodes(&priorityQueue->array[smallest], &priorityQueue->array[idx]);
+        heapify(priorityQueue, smallest);
+    }
+}
+
+bn *extractMin(pq *priorityQueue) {
+    bn *temp = priorityQueue->array[0];
+    priorityQueue->array[0] = priorityQueue->array[priorityQueue->size - 1];
+    --priorityQueue->size;
+    heapify(priorityQueue, 0);
+    return temp;
+}
+
+void insertPriortyQueue(pq *priorityQueue, bn *node) {
+    ++priorityQueue->size;
+
+    int i = priorityQueue->size - 1;
+
+    while(i && node->prob < priorityQueue->array[(i - 1) / 2]->prob) {
+        priorityQueue->array[i] = priorityQueue->array[(i - 1) / 2];
+        i = (i - 1) / 2;
+    }
+
+    priorityQueue->array[i] = node;
+}
 
 int cmp(bn *a, bn *b) {
     float diff = a->prob - b->prob;
@@ -32,39 +94,16 @@ bn *constructTree(bn **initial_nodes, int n) {
 
     qsort(initial_nodes, n, sizeof(bn*), cmp);
 
-    int new_size = ceil(((float) n) / 2);
-    bn **new_nodes;
-    new_nodes = (bn **)malloc(new_size * sizeof(bn *));
+    int size = n;
 
-    int new_nodes_loc = 0;
-    for(int i = 0; i < n; i += 2) {
-        if(i == (n - 1)) {
-            new_nodes[new_nodes_loc] = initial_nodes[i];
-            continue;
-        }
+    while(size > 1) {
 
-        bn *left = initial_nodes[i];
-        bn *right = initial_nodes[i + 1];
-
-        bn *parent = (bn *)malloc(sizeof(bn));
-
-        parent->left = left;
-        parent->right = right;
-        parent->val = 0;
-        parent->prob = left->prob + right->prob;
-
-        new_nodes[new_nodes_loc] = parent;
-
-        new_nodes_loc++;
     }
 
-    bn *root = constructTree(new_nodes, new_size);
-
-    free(new_nodes);
     return root;
 }
 
-int count_leaf(bn *node, int depth) {
+int countLeaf(bn *node, int depth) {
     if(node->left == NULL && node->right == NULL) {
         return 1;
     } else {
@@ -74,6 +113,8 @@ int count_leaf(bn *node, int depth) {
         return out;
     }
 }
+
+// int getCodes(int)
 
 int main() {
     FILE *file;
