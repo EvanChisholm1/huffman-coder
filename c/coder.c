@@ -22,6 +22,15 @@ struct PriorityQueue {
     bn **array;
 };
 
+bn *createNode(char val, float prob) {
+    bn *node = (bn*)malloc(sizeof(bn));
+    node->val = val;
+    node->prob = prob;
+    node->left = node->left = NULL;
+
+    return node;
+}
+
 pq *createPriorityQueue(int capacity) {
     pq *priorityQueue = (pq*)malloc(sizeof(pq));
     priorityQueue->size = 0;
@@ -77,44 +86,46 @@ void insertPriortyQueue(pq *priorityQueue, bn *node) {
     priorityQueue->array[i] = node;
 }
 
-int cmp(bn *a, bn *b) {
-    float diff = a->prob - b->prob;
-
-    if (diff == 0) return 0;
-
-    return diff > 0 ? ceil(diff) : floor(diff);
+bool isSizeOne(pq *priorityQueue) {
+    return (priorityQueue->size == 1);
 }
 
-bn *constructTree(bn **initial_nodes, int n) {
-    printf("%d\n", n);
-    printf("made it here!!\n");
-    if(n == 1) {
-        return initial_nodes[0];
-    }
-
-    qsort(initial_nodes, n, sizeof(bn*), cmp);
-
-    int size = n;
-
-    while(size > 1) {
-
-    }
-
-    return root;
-}
-
-int countLeaf(bn *node, int depth) {
-    if(node->left == NULL && node->right == NULL) {
-        return 1;
-    } else {
-        int out = 0;
-        if(node->left != NULL) out += count_leaf(node->left, depth + 1);
-        if(node->right != NULL) out += count_leaf(node->right, depth + 1);
-        return out;
+void buildMinHeap(pq *priorityQueue) {
+    int n = priorityQueue->size - 1;
+    for (int i = (n - 1) / 2; i >= 0; i--) {
+        heapify(priorityQueue, i);
     }
 }
 
-// int getCodes(int)
+bn *merge(bn *left, bn *right) {
+    bn *top = createNode('$', left->prob + right->prob);
+    top->left = left;
+    top->right = right;
+    return top;
+}
+
+bn *buildHuffmanTree(char characters[], float probabilities[], int size) {
+    bn *left, *right, *top;
+    pq *priorityQueue = createPriorityQueue(size);
+
+    for(int i = 0; i < size; i++) {
+        priorityQueue->array[i] = createNode(characters[i], probabilities[i]);
+    }
+
+    priorityQueue->size = size;
+    buildMinHeap(priorityQueue);
+
+    while(!isSizeOne(priorityQueue)) {
+        bn *left = extractMin(priorityQueue);
+        bn *right = extractMin(priorityQueue);
+
+
+        top = merge(left, right);
+        insertPriortyQueue(priorityQueue, top);
+    }
+
+    return extractMin(priorityQueue);
+}
 
 int main() {
     FILE *file;
@@ -147,62 +158,31 @@ int main() {
     for(int i = 0; i < 256; i++) {
         if(counts[i] == 0) continue;
 
-        // printf("%c: %d\n", i, counts[i]);
         used_chars += 1;
     }
 
-
-
     printf("%d\n", used_chars);
 
-    bn **initial_nodes;
-    initial_nodes = (bn **)malloc(used_chars * sizeof(bn *));
+    char *characters = (char *)malloc(sizeof(char) * used_chars);
+    float *probabilities = (float *)malloc(sizeof(float) * used_chars);
 
     int current_loc = 0;
-    for (int i = 0; i < 256; i++) {
-        if(counts[i] == 0) continue;
-        
-        initial_nodes[current_loc] = (bn *)malloc(sizeof(bn));
-        if(initial_nodes[current_loc] == NULL) {
-            perror("failed to allocated memory for node struct");
+    for(int i = 0; i < 256; i++) {
+        if(counts[i]) {
+            characters[current_loc] = i;
+            probabilities[current_loc] = ((float)(counts[i])) / ((float)length);
 
-            for(int j = 0; j < i; j++) {
-                free(initial_nodes[j]);
-            }
-            free(initial_nodes);
-            exit(EXIT_FAILURE);
+            current_loc++;
         }
-
-        initial_nodes[current_loc]->left = NULL;
-        initial_nodes[current_loc]->right = NULL;
-        initial_nodes[current_loc]->val = (char)i;
-        initial_nodes[current_loc]->prob = ((float)counts[i]) / ((float) length);
-
-        current_loc++;
     }
 
-    float prob_sum = 0;
-
-    for(int i = 0; i < used_chars; i++) {
-        printf("%c prob: %f\n", initial_nodes[i]->val, initial_nodes[i]->prob);
-        prob_sum += initial_nodes[i]->prob;
-    }
-
-    fclose(file);
-
-
-    bn *root = constructTree(initial_nodes, used_chars);
-    printf("made it here!!\n");
-
-    printf("%f\n", root->prob);
+    float prob_sum = 0.0;
+    for(int i = 0; i < used_chars; i++) prob_sum += probabilities[i];
     printf("%f\n", prob_sum);
-    printf("%d\n", count_leaf(root, 0));
 
-    for(int i = 0; i < used_chars; i++) {
-        free(initial_nodes[i]);
-    }
+    bn *tree = buildHuffmanTree(characters, probabilities, used_chars);
 
-    free(initial_nodes);
+    printf("%f\n", tree->prob);
 
     return 0;
 }
