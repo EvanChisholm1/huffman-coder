@@ -138,6 +138,7 @@ void printCodes(bn *root, int arr[], int top) {
     }
 
     if(root->left == NULL && root->right == NULL) {
+        printf("%d\n", top);
         printf("%c: ", root->val);
         for (int i = 0; i < top; i++) {
             printf("%d", arr[i]);
@@ -146,9 +147,26 @@ void printCodes(bn *root, int arr[], int top) {
     }
 }
 
+float calcAvgCodeLen(bn *root, int top) {
+    float out = 0.0;
+    if(root->left) {
+        out += calcAvgCodeLen(root->left, top + 1);
+    }
+
+    if(root->right) {
+        out += calcAvgCodeLen(root->right, top + 1);
+    }
+
+    if(root->left == NULL && root->right == NULL) {
+        return root->prob * top;
+    }
+
+    return out;
+}
+
 int main() {
     FILE *file;
-    char *filename = "../book.txt";
+    char *filename = "../shake.txt";
     char ch;
 
     file = fopen(filename, "r");
@@ -206,6 +224,9 @@ int main() {
     int arr[200];
 
     printCodes(tree, arr, 0);
+    float avg_len = calcAvgCodeLen(tree, 0);
+
+    printf("%f\n", avg_len);
 
     // TODO: add clean up
     return 0;
