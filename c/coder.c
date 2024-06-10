@@ -1,13 +1,15 @@
 #include<stdio.h>
 #include<stdlib.h>
-// #include<stdbool.h>
 #include<malloc.h>
 #include<string.h>
 #include<math.h>
 #include<stdbool.h>
+#include<assert.h>
 
 #define bn struct BinaryNode
 #define pq struct PriorityQueue
+#define hc struct HuffmanCode
+#define MAX_SYMBOLS 256
 
 struct BinaryNode {
     bn *left;
@@ -21,6 +23,31 @@ struct PriorityQueue {
     int capacity;
     bn **array;
 };
+
+struct HuffmanCode {
+    char symbol;
+    char *code;
+};
+
+hc huffmanDictionary[MAX_SYMBOLS];
+int dictionarySize = 0;
+
+void insertHuffmanCode(hc *dictionary, int *size, char symbol, char *code) {
+    dictionary[*size].symbol = symbol;
+    dictionary[*size].code = strdup(code);
+    (*size)++;
+}
+
+// linear scan of table, should be fine since max of 256 values
+char *getHuffmanCode(hc *dictionary, int size, char symbol) {
+    for(int i = 0; i < size; i++) {
+        if(dictionary[i].symbol == symbol) {
+            return dictionary[i].code;
+        }
+    }
+
+    return NULL;
+}
 
 bn *createNode(char val, float prob) {
     bn *node = (bn*)malloc(sizeof(bn));
@@ -127,6 +154,7 @@ bn *buildHuffmanTree(char characters[], float probabilities[], int size) {
 }
 
 void printCodes(bn *root, int arr[], int top) {
+    // printf("%c\n", root->val);
     if(root->left) {
         arr[top] = 0;
         printCodes(root->left, arr, top + 1);
@@ -147,6 +175,35 @@ void printCodes(bn *root, int arr[], int top) {
     }
 }
 
+void buildDict(bn *root, int arr[], int top, hc *dictionary, int *size) {
+    if(root->left) {
+        arr[top] = 0;
+        buildDict(root->left, arr, top + 1, dictionary, size);
+    }
+
+    if(root->right) {
+        arr[top] = 1;
+        buildDict(root->right, arr, top + 1, dictionary, size);
+    }
+
+    if(root->left == NULL && root->right == NULL) {
+
+        char *code = (char*)malloc(sizeof(char) * (top + 1));
+
+        for (int i = 0; i < top; i++) {
+            if(arr[i] == 1) {
+                code[i] = '1';
+            } else {
+                code[i] = '0';
+            }
+        }
+
+        code[top] = '\0';
+
+        insertHuffmanCode(dictionary, size, root->val, code);
+    }
+}
+
 float calcAvgCodeLen(bn *root, int top) {
     float out = 0.0;
     if(root->left) {
@@ -164,7 +221,28 @@ float calcAvgCodeLen(bn *root, int top) {
     return out;
 }
 
+char *readFile(char *filename) {
+    FILE *f = fopen(filename, "rt");
+    assert(f);
+    fseek(f, 0, SEEK_END);
+    int l = ftell(f);
+    printf("%d", l);
+    fseek(f, 0, SEEK_SET);
+    char *buffer = (char *)malloc(l + 1);
+    buffer[l] = '\0';
+
+    fread(buffer, 1, l, f);
+
+    fclose(f);
+    return buffer;
+}
+
 int main() {
+    // when this code runs it causes a segfault way down the line no idea why
+    // char *foobar = readFile("../test.txt");
+    // printf("%s\n", foobar);
+    // free(foobar);
+
     FILE *file;
     char *filename = "../shake.txt";
     char ch;
@@ -175,7 +253,6 @@ int main() {
         perror("Error opening file");
         return EXIT_FAILURE;
     }
-
 
     int counts[256];
 
@@ -223,13 +300,19 @@ int main() {
 
     int arr[200];
 
+    printf("made it here\n");
     printCodes(tree, arr, 0);
     float avg_len = calcAvgCodeLen(tree, 0);
+    printf("made it here\n");
 
     printf("%f\n", avg_len);
+
+    buildDict(tree, arr, 0, huffmanDictionary, &dictionarySize);
+
+    char *code = getHuffmanCode(huffmanDictionary, dictionarySize, 'A');
+
+    printf("%s\n", code);
 
     // TODO: add clean up
     return 0;
 }
-
-
