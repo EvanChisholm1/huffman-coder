@@ -221,6 +221,16 @@ float calcAvgCodeLen(bn *root, int top) {
     return out;
 }
 
+int calcCompressedLength(char *sourceString) {
+    int length = 0;
+    for(int i = 0; i < strlen(sourceString); i++) {
+        char *charCode = getHuffmanCode(huffmanDictionary, dictionarySize, sourceString[i]);
+        length += strlen(charCode);
+    }
+
+    return length;
+}
+
 char *readFile(char *filename) {
     FILE *f = fopen(filename, "rt");
     assert(f);
@@ -312,6 +322,11 @@ int main() {
     char *code = getHuffmanCode(huffmanDictionary, dictionarySize, 'A');
 
     printf("%s\n", code);
+
+
+    char *testString = "hello world!";
+    int compressedLength = calcCompressedLength(testString);
+    printf("%d -> %d\n", (int)strlen(testString) * 8, compressedLength);
 
     // TODO: add clean up
     return 0;
