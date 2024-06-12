@@ -231,6 +231,24 @@ int calcCompressedLength(char *sourceString) {
     return length;
 }
 
+char *getCompresedStr(char *sourceString) {
+    int outLength = calcCompressedLength(sourceString);
+    char *outStr = (char *)malloc(sizeof(char) * (outLength + 1));
+
+    int currentLocation = 0;
+    for(int i = 0; i < strlen(sourceString); i++) {
+        char *code = getHuffmanCode(huffmanDictionary, dictionarySize, sourceString[i]);
+        for(int j = 0; j < strlen(code); j++) {
+            outStr[currentLocation] = code[j];
+            currentLocation++;
+        }
+    }
+
+    outStr[outLength] = '\0';
+
+    return outStr;
+}
+
 char *readFile(char *filename) {
     FILE *f = fopen(filename, "rt");
     assert(f);
@@ -327,6 +345,9 @@ int main() {
     char *testString = "hello world!";
     int compressedLength = calcCompressedLength(testString);
     printf("%d -> %d\n", (int)strlen(testString) * 8, compressedLength);
+    char *compressedStr = getCompresedStr(testString);
+    printf("%s\n", compressedStr);
+
 
     // TODO: add clean up
     return 0;
