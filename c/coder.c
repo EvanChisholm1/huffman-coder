@@ -249,6 +249,29 @@ char *getCompresedStr(char *sourceString) {
     return outStr;
 }
 
+void packBits(char *sourceString, unsigned char **outBuffer, size_t *byteCount) {
+    size_t length = strlen(sourceString);
+    size_t numBytes = (length + 7) / 8;
+
+    *byteCount = numBytes;
+
+    *outBuffer = (unsigned char *)malloc(numBytes);
+    if(*outBuffer == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+
+    for(size_t i = 0; i < numBytes; i++) {
+        (*outBuffer)[i] = 0;
+        for(size_t j = 0; j < 8; j++) {
+            size_t bitIndex = i * 8 + j;
+            if(bitIndex < length && sourceString[bitIndex] == '1') {
+                (*outBuffer)[i] |= 1 << (7 - j);
+            }
+        }
+    }
+}
+
 char *readFile(char *filename) {
     FILE *f = fopen(filename, "rt");
     assert(f);
