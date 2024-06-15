@@ -272,6 +272,28 @@ void packBits(char *sourceString, unsigned char **outBuffer, size_t *byteCount) 
     }
 }
 
+// need to add a way to see where the huffman code terminates
+void unpackBits(unsigned char *buffer, size_t byteCount, char **outString) {
+    size_t length = byteCount * 8;
+    *outString = (char *)malloc(length + 1);
+    if(*outString == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+
+    for(size_t i = 0; i < byteCount; i++) {
+        for(size_t j = 0; j < 8; j++) {
+            size_t bitIndex = i * 8 + j;
+            if(bitIndex < length) {
+                (*outString)[bitIndex] = (buffer[i] & (1 << (7 - j))) ? '1' : '0';
+            }
+        }
+    }
+
+    (*outString)[length] = '\0';
+
+}
+
 char *readFile(char *filename) {
     FILE *f = fopen(filename, "rt");
     assert(f);
