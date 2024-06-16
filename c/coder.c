@@ -317,7 +317,8 @@ int main() {
     // free(foobar);
 
     FILE *file;
-    char *filename = "../shake.txt";
+    char *filename = "../book.txt";
+    // char *filename = "../shake.txt";
     char ch;
 
     file = fopen(filename, "r");
@@ -330,7 +331,7 @@ int main() {
     int counts[256];
 
     for(int i = 0; i < 256; i++) {
-        counts[i] = 0;
+        counts[i] = 1;
     }
 
     int length = 0;
@@ -388,10 +389,20 @@ int main() {
 
 
     char *testString = "hello world!";
+    printf("here!!\n");
     int compressedLength = calcCompressedLength(testString);
+    printf("here!!\n");
     printf("%d -> %d\n", (int)strlen(testString) * 8, compressedLength);
     char *compressedStr = getCompresedStr(testString);
     printf("%s\n", compressedStr);
+
+    printf("here\n");
+
+    unsigned char *buffer;
+    size_t byteCount;
+    packBits(compressedStr, &buffer, &byteCount);
+    printf("%ld\n", byteCount);
+
 
 
     // TODO: add clean up
