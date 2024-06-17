@@ -403,7 +403,10 @@ int main() {
     packBits(compressedStr, &buffer, &byteCount);
     printf("%ld\n", byteCount);
 
+    char *unpackedStr;
+    unpackBits(buffer, byteCount, &unpackedStr);
 
+    printf("%s\n", unpackedStr);
 
     // TODO: add clean up
     return 0;
