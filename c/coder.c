@@ -310,6 +310,29 @@ char *readFile(char *filename) {
     return buffer;
 }
 
+void serializeDictionary(FILE *f, hc *dictionary, int size) {
+    fwrite(&size, sizeof(int), 1, f);
+
+    for(int i = 0; i < size; i++) {
+        fwrite(&dictionary[i].symbol, sizeof(char), 1, f);
+        int codeLength = strlen(dictionary[i].code) + 1;
+        fwrite(&codeLength, sizeof(int), 1, f);
+        fwrite(dictionary[i].code, sizeof(char), codeLength, f);
+    }
+}
+
+void deserializeDictionary(FILE *f, hc *dictionary, int *size) {
+    fread(size, sizeof(int), 1, f);
+    
+    for (int i = 0; i < *size; i++) {
+        fread(&dictionary[i].symbol, sizeof(char), 1, f);
+        int codeLength;
+        fread(&codeLength, sizeof(int), 1, f);
+        dictionary[i].code = (char *)malloc(sizeof(char) * codeLength);
+        fread(dictionary[i].code, sizeof(char), codeLength, f);
+    }
+}
+
 int main() {
     // when this code runs it causes a segfault way down the line no idea why
     // char *foobar = readFile("../test.txt");
@@ -407,6 +430,12 @@ int main() {
     unpackBits(buffer, byteCount, &unpackedStr);
 
     printf("%s\n", unpackedStr);
+
+    FILE *f = fopen("test.bin", "wb");
+    
+    serializeDictionary(f, huffmanDictionary, dictionarySize);
+
+    fclose(f);
 
     // TODO: add clean up
     return 0;
