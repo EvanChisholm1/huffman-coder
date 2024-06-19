@@ -249,6 +249,46 @@ char *getCompresedStr(char *sourceString) {
     return outStr;
 }
 
+char *getDecompressedStr(char *sourceString, hc *dictionary, int size, int outLength) {
+    int resultCapacity = 128;
+    char *result = (char *)malloc(sizeof(char) * resultCapacity);
+    if(result == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+
+    int resultIndex = 0;
+    int codedStrLen = strlen(sourceString);
+    char tempBuffer[128];
+    int tempIndex = 0;
+
+    for(int i = 0; i < codedStrLen; i++) {
+        tempBuffer[tempIndex++] = sourceString[i];
+        tempBuffer[tempIndex] = '\0';
+
+        for(int j = 0; j < size; j++) {
+            if(strcmp(tempBuffer, dictionary[j].code) == 0) {
+                if(resultIndex == resultCapacity) {
+                    resultCapacity *= 2;
+                    result = (char *)realloc(result, sizeof(char) * resultCapacity);
+                    if(result == NULL) {
+                        perror("Error allocating memory");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+
+                result[resultIndex++] = dictionary[j].symbol;
+                tempIndex = 0;
+                break;
+            }
+        }
+        if(resultIndex == outLength) break;
+    }
+
+    result[resultIndex] = '\0';
+    return result;
+}
+
 void packBits(char *sourceString, unsigned char **outBuffer, size_t *byteCount) {
     size_t length = strlen(sourceString);
     size_t numBytes = (length + 7) / 8;
@@ -430,6 +470,7 @@ int main() {
     unpackBits(buffer, byteCount, &unpackedStr);
 
     printf("%s\n", unpackedStr);
+    printf("%s\n", getDecompressedStr(unpackedStr, huffmanDictionary, dictionarySize, strlen(testString)));
 
     FILE *f = fopen("test.bin", "wb");
     
