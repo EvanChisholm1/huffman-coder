@@ -373,6 +373,21 @@ void deserializeDictionary(FILE *f, hc *dictionary, int *size) {
     }
 }
 
+void compressAndSerialize(FILE *f, char *sourceString) {
+    int compressedLength = calcCompressedLength(sourceString);
+    char *compressedStr = getCompresedStr(sourceString);
+
+    int uncompressedLength = strlen(sourceString);
+
+    unsigned char *buffer;
+    size_t byteCount;
+    packBits(compressedStr, &buffer, &byteCount);
+
+    fwrite(&uncompressedLength, sizeof(int), 1, f);
+    fwrite(&compressedLength, sizeof(int), 1, f);
+    fwrite(buffer, sizeof(unsigned char), byteCount, f);
+}
+
 int main() {
     // when this code runs it causes a segfault way down the line no idea why
     // char *foobar = readFile("../test.txt");
