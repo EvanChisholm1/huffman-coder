@@ -388,6 +388,22 @@ void compressAndSerialize(FILE *f, char *sourceString) {
     fwrite(buffer, sizeof(unsigned char), byteCount, f);
 }
 
+void deserializeCompressed(FILE *f, char **outString) {
+    int uncompressedLength;
+    int compressedLength;
+
+    fread(&uncompressedLength, sizeof(int), 1, f);
+    fread(&compressedLength, sizeof(int), 1, f);
+
+    unsigned char *buffer = (unsigned char *)malloc(compressedLength);
+    fread(buffer, sizeof(unsigned char), compressedLength, f);
+
+    char *unpackedStr;
+    unpackBits(buffer, compressedLength, &unpackedStr);
+
+    *outString = getDecompressedStr(unpackedStr, huffmanDictionary, dictionarySize, uncompressedLength);
+}
+
 int main() {
     // when this code runs it causes a segfault way down the line no idea why
     // char *foobar = readFile("../test.txt");
@@ -490,6 +506,7 @@ int main() {
     FILE *f = fopen("test.bin", "wb");
     
     serializeDictionary(f, huffmanDictionary, dictionarySize);
+    compressAndSerialize(f, testString);
 
     fclose(f);
 
