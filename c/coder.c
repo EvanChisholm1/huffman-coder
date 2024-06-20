@@ -51,6 +51,10 @@ char *getHuffmanCode(hc *dictionary, int size, char symbol) {
 
 bn *createNode(char val, float prob) {
     bn *node = (bn*)malloc(sizeof(bn));
+    if(node == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
     node->val = val;
     node->prob = prob;
     node->left = node->left = NULL;
@@ -176,6 +180,7 @@ void printCodes(bn *root, int arr[], int top) {
 }
 
 void buildDict(bn *root, int arr[], int top, hc *dictionary, int *size) {
+    // printf("%c\n", root->val);
     if(root->left) {
         arr[top] = 0;
         buildDict(root->left, arr, top + 1, dictionary, size);
@@ -334,22 +339,6 @@ void unpackBits(unsigned char *buffer, size_t byteCount, char **outString) {
 
 }
 
-char *readFile(char *filename) {
-    FILE *f = fopen(filename, "rt");
-    assert(f);
-    fseek(f, 0, SEEK_END);
-    int l = ftell(f);
-    printf("%d", l);
-    fseek(f, 0, SEEK_SET);
-    char *buffer = (char *)malloc(l + 1);
-    buffer[l] = '\0';
-
-    fread(buffer, 1, l, f);
-
-    fclose(f);
-    return buffer;
-}
-
 void serializeDictionary(FILE *f, hc *dictionary, int size) {
     fwrite(&size, sizeof(int), 1, f);
 
@@ -405,11 +394,6 @@ void deserializeCompressed(FILE *f, char **outString) {
 }
 
 int main() {
-    // when this code runs it causes a segfault way down the line no idea why
-    // char *foobar = readFile("../test.txt");
-    // printf("%s\n", foobar);
-    // free(foobar);
-
     FILE *file;
     char *filename = "../book.txt";
     // char *filename = "../shake.txt";
@@ -430,10 +414,31 @@ int main() {
 
     int length = 0;
 
+    int contentLength = 0;
+    int contentCapacity = 512;
+    char *content = (char *)malloc(sizeof(char) * 512);
+
     while((ch = fgetc(file)) != EOF) {
         counts[ch] += 1;
         length += 1;
+
+        if(contentLength == contentCapacity) {
+            contentCapacity *= 2;
+            content = (char *)realloc(content, sizeof(char) * contentCapacity);
+            if(content == NULL) {
+                perror("Error allocating memory");
+                exit(EXIT_FAILURE);
+            }
+        }
+        content[contentLength++] = ch;
     }
+    fclose(file);
+
+    printf("hello?\n");
+
+    content[contentLength] = '\0';
+
+    printf("%s\n", content);
 
     int used_chars = 0;
 
@@ -448,6 +453,7 @@ int main() {
     char *characters = (char *)malloc(sizeof(char) * used_chars);
     float *probabilities = (float *)malloc(sizeof(float) * used_chars);
 
+    printf("hello?\n");
     int current_loc = 0;
     for(int i = 0; i < 256; i++) {
         if(counts[i]) {
@@ -460,37 +466,30 @@ int main() {
 
     float prob_sum = 0.0;
     for(int i = 0; i < used_chars; i++) prob_sum += probabilities[i];
-    printf("%f\n", prob_sum);
 
     bn *tree = buildHuffmanTree(characters, probabilities, used_chars);
+    printf("hello?????\n");
 
-    printf("%f\n", tree->prob);
 
-    int arr[200];
+    int arr[512];
 
-    printf("made it here\n");
-    printCodes(tree, arr, 0);
-    float avg_len = calcAvgCodeLen(tree, 0);
-    printf("made it here\n");
+    // printCodes(tree, arr, 0);
+    // float avg_len = calcAvgCodeLen(tree, 0);
+    printf("hello!!?\n");
 
-    printf("%f\n", avg_len);
 
     buildDict(tree, arr, 0, huffmanDictionary, &dictionarySize);
 
     char *code = getHuffmanCode(huffmanDictionary, dictionarySize, 'A');
 
-    printf("%s\n", code);
 
 
     char *testString = "hello world!";
-    printf("here!!\n");
     int compressedLength = calcCompressedLength(testString);
-    printf("here!!\n");
     printf("%d -> %d\n", (int)strlen(testString) * 8, compressedLength);
     char *compressedStr = getCompresedStr(testString);
     printf("%s\n", compressedStr);
 
-    printf("here\n");
 
     unsigned char *buffer;
     size_t byteCount;
@@ -505,8 +504,10 @@ int main() {
 
     FILE *f = fopen("test.bin", "wb");
     
+    printf("hello?\n");
     serializeDictionary(f, huffmanDictionary, dictionarySize);
     compressAndSerialize(f, testString);
+    // compressAndSerialize(f, content);
 
     fclose(f);
 
